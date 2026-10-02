@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบแจ้งเตือนและติดตามแผนบำรุงรักษาหม้อแปลง - PEA ขอนแก่น</title>
+    <!-- Google Fonts: Kanit -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        pea: {
+                            purple: '#4C1D95',      /* ม่วงเข้ม PEA */
+                            darkPurple: '#2E1065',  /* ม่วงเข้มพิเศษ */
+                            gold: '#D97706',        /* ทอง */
+                            lightGold: '#FBBF24',   /* ทองอ่อน */
+                            bg: '#F9FAFB',          /* ขาวอมเทาอ่อน */
+                            cardBg: '#FFFFFF'
+                        }
+                    },
+                    fontFamily: {
+                        kanit: ['Kanit', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #F9FAFB; }
+        .leaflet-container { height: 100%; width: 100%; border-radius: 0.75rem; }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800 flex flex-col justify-between">
+
+    <!-- Header / Navbar -->
+    <header class="bg-gradient-to-r from-pea-purple via-pea-darkPurple to-pea-purple text-white shadow-xl sticky top-0 z-50 border-b-4 border-pea-gold">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-pea-gold p-3 rounded-xl shadow-md text-white text-2xl border border-yellow-200">
+                    <i class="fa-solid fa-bolt-lightning"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-bold tracking-wide">การไฟฟ้าส่วนภูมิภาคจังหวัดขอนแก่น</h1>
+                    <p class="text-xs md:text-sm text-pea-lightGold font-light">ระบบติดตามและบันทึกผลการบำรุงรักษาหม้อแปลงไฟฟ้า</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 w-full md:w-auto justify-end">
+                <div class="bg-white/10 px-4 py-2 rounded-xl text-sm backdrop-blur-sm border border-white/20 flex items-center gap-2">
+                    <i class="fa-regular fa-calendar-days text-pea-lightGold"></i>
+                    <span id="currentStatusDisplay">กำลังซิงค์ข้อมูล...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 py-6 flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
+
+        <!-- Column 1 & 2: Dashboard & Outage List -->
+        <div class="lg:col-span-2 space-y-6">
+            
+            <!-- Dashboard / Status & Material Summary Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div class="bg-white rounded-2xl shadow-md p-4 border border-gray-100 flex items-center gap-3">
+                    <div class="bg-purple-100 text-pea-purple p-3 rounded-xl text-lg">
+                        <i class="fa-solid fa-server"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-gray-500">หม้อแปลงทั้งหมด</p>
+                        <p id="dashTotal" class="text-lg font-bold text-pea-purple">0</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-md p-4 border border-gray-100 flex items-center gap-3">
+                    <div class="bg-emerald-100 text-emerald-600 p-3 rounded-xl text-lg">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-gray-500">บำรุงรักษาแล้ว</p>
+                        <p id="dashCompleted" class="text-lg font-bold text-emerald-600">0</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-md p-4 border border-gray-100 flex items-center gap-3">
+                    <div class="bg-amber-100 text-amber-600 p-3 rounded-xl text-lg">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-gray-500">ยังไม่ดำเนินการ</p>
+                        <p id="dashPending" class="text-lg font-bold text-amber-600">0</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-2xl shadow-md p-4 border border-gray-100 flex items-center gap-3">
+                    <div class="bg-blue-100 text-blue-600 p-3 rounded-xl text-lg">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                    <div>
+                        <p class="text-[11px] text-gray-500">ยอดรวมพัสดุเบิก</p>
+                        <p id="dashMaterialTotal" class="text-lg font-bold text-blue-600">0 ชิ้น</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search & Filter Card -->
+            <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100">
+                <h2 class="text-lg font-semibold text-pea-purple mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-magnifying-glass"></i> ค้นหาแผนดับไฟ / หมายเลขหม้อแปลง / รหัสพัสดุ / หมู่บ้าน
+                </h2>
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">
+                        <i class="fa-solid fa-search"></i>
+                    </span>
+                    <input type="text" id="searchInput" placeholder="พิมพ์ค้นหา (เช่น โคกแปะ, TR61-011392, รหัสวัสดุ, แก้ไขแล้ว)..." 
+                        class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pea-purple focus:bg-white transition text-sm">
+                </div>
+            </div>
+
+            <!-- Monthly Calendar View Card -->
+            <div class="bg-white rounded-2xl shadow-md p-6 border border-gray-100">
+                <div class="flex justify-between items-center mb-6">
+                    <div class="flex items-center gap-3">
+                        <button onclick="changeMonth(-1)" class="p-2 rounded-lg bg-gray-100 hover:bg-pea-purple hover:text-white transition">
+                            <i class="fa-solid fa-chevron-left text-sm"></i>
+                        </button>
+                        <h2 id="calendarMonthTitle" class="text-xl font-bold text-pea-purple">-</h2>
+                        <button onclick="changeMonth(1)" class="p-2 rounded-lg bg-gray-100 hover:bg-pea-purple hover:text-white transition">
+                            <i class="fa-solid fa-chevron-right text-sm"></i>
+                        </button>
+                    </div>
+                    <span id="monthlyEventsBadge" class="text-xs bg-pea-purple/10 text-pea-purple font-medium px-3 py-1.5 rounded-full">รวมทั้งเดือน 0 รายการ</span>
+                </div>
+
+                <div class="grid grid-cols-7 gap-1 text-center font-semibold text-xs text-gray-500 mb-2">
+                    <div class="text-red-500">อา.</div>
+                    <div>จ.</div>
+                    <div>อ.</div>
+                    <div>พ.</div>
+                    <div>พฤ.</div>
+                    <div>ศ.</div>
+                    <div class="text-blue-500">ส.</div>
+                </div>
+
+                <div id="calendarGrid" class="grid grid-cols-7 gap-1.5">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Outage List Table Card -->
+            <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 id="selectedDateTitle" class="text-md font-semibold text-gray-700 flex items-center gap-2">
+                        <i class="fa-solid fa-list-check text-pea-gold"></i> รายการหม้อแปลงประจำวันที่: <span class="text-pea-purple font-bold">-</span>
+                    </h3>
+                </div>
+
+                <div class="overflow-x-auto max-h-[450px] overflow-y-auto pr-1">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-pea-purple text-white text-xs uppercase tracking-wider sticky top-0 z-10">
+                                <th class="p-3 rounded-l-lg">เวลา / สถานะ</th>
+                                <th class="p-3">หมายเลข PEA</th>
+                                <th class="p-3">ข้อมูลหน้างาน & รายการพัสดุ (รหัสวัสดุ)</th>
+                                <th class="p-3">หมู่บ้าน / ตำบล</th>
+                                <th class="p-3 text-center">นำทาง</th>
+                                <th class="p-3 rounded-r-lg text-center">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="outageTableBody" class="divide-y divide-gray-100 text-sm">
+                            <tr><td colspan="6" class="text-center py-8 text-gray-400">กรุณาเลือกวันที่จากปฏิทินด้านบน</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Dashboard การเบิกอุปกรณ์แยกตามรายหม้อแปลง (ย้ายมาไว้ด้านล่างสุด) -->
+            <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100">
+                <h3 class="text-md font-semibold text-pea-purple mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-clipboard-list text-pea-gold"></i> Dashboard สรุปการเบิกอุปกรณ์ (แยกรายหม้อแปลง)
+                </h3>
+                <div class="overflow-x-auto max-h-56 overflow-y-auto pr-1">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-700 uppercase tracking-wider sticky top-0">
+                                <th class="p-2.5 rounded-l-lg">หมายเลข PEA / ใบสั่ง</th>
+                                <th class="p-2.5">รหัสวัสดุ</th>
+                                <th class="p-2.5">รายการอุปกรณ์ที่เบิก</th>
+                                <th class="p-2.5 text-right rounded-r-lg">จำนวน</th>
+                            </tr>
+                        </thead>
+                        <tbody id="materialDashboardBody" class="divide-y divide-gray-100">
+                            <tr><td colspan="4" class="text-center py-4 text-gray-400">ยังไม่มีการบันทึกเบิกพัสดุ</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 3: Map & Actions Panel -->
+        <div class="space-y-6">
+            
+            <!-- Map Card -->
+            <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100 flex flex-col h-[450px]">
+                <h2 class="text-lg font-semibold text-pea-purple mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-map-location-dot"></i> ตำแหน่งหม้อแปลงบนแผนที่
+                </h2>
+                <div id="map" class="flex-grow z-0"></div>
+            </div>
+
+            <!-- Summary Stats Card -->
+            <div class="bg-gradient-to-br from-pea-purple to-pea-darkPurple text-white rounded-2xl shadow-md p-6 border-b-4 border-pea-gold">
+                <h3 class="text-lg font-semibold mb-4 flex items-center gap-2 text-pea-lightGold">
+                    <i class="fa-solid fa-chart-pie"></i> ข้อมูลสรุปพื้นที่
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/10 text-center">
+                        <p class="text-xs text-gray-200">หม้อแปลงทั้งหมด</p>
+                        <p id="statTotal" class="text-2xl font-bold text-pea-lightGold mt-1">0</p>
+                        <p class="text-[10px] text-gray-300">จุดบริการ</p>
+                    </div>
+                    <div class="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/10 text-center">
+                        <p class="text-xs text-gray-200">จำนวนวันปฏิบัติงาน</p>
+                        <p id="statDays" class="text-2xl font-bold text-pea-lightGold mt-1">0</p>
+                        <p class="text-[10px] text-gray-300">วันทำการ</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Modal บันทึกผลการปฏิบัติงาน -->
+    <div id="workLogModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 border border-gray-100 animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-pea-purple flex items-center gap-2">
+                    <i class="fa-solid fa-pen-to-square text-pea-gold"></i> บันทึกข้อมูลผลการบำรุงรักษา
+                </h3>
+                <button onclick="closeWorkLogModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">หม้อแปลงที่เลือก:</label>
+                    <p id="modalItemInfo" class="text-sm font-bold text-pea-purple bg-gray-50 p-2.5 rounded-xl border border-gray-200">-</p>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">หมายเลขใบสั่ง (ตัวเลขเท่านั้น):</label>
+                        <input type="text" id="inputWorkOrder" inputmode="numeric" pattern="[0-9]*" placeholder="เช่น 6801234" 
+                            class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pea-purple text-sm" 
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">ชนิดหม้อแปลง:</label>
+                        <select id="inputTransformerType" class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pea-purple text-sm font-medium">
+                            <option value="CONV">CONV (Conventional)</option>
+                            <option value="SEALED">SEALED (Sealed Type)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-xs font-bold text-pea-purple flex items-center gap-1.5">
+                            <i class="fa-solid fa-boxes-stacked"></i> รายการพัสดุและรหัสวัสดุ (เบิกพัสดุ):
+                        </label>
+                        <button type="button" onclick="addMaterialRow()" class="px-3 py-1 bg-pea-purple hover:bg-pea-darkPurple text-white rounded-lg text-xs font-medium transition shadow-sm">
+                            <i class="fa-solid fa-plus mr-1"></i> เพิ่มรายการพัสดุ
+                        </button>
+                    </div>
+                    <div id="materialRowsContainer" class="space-y-3 max-h-64 overflow-y-auto pr-1">
+                        <!-- เติมด้วย JavaScript -->
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-3">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">สถานะการแก้ไข:</label>
+                    <select id="inputStatus" class="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pea-purple text-sm font-semibold">
+                        <option value="ยังไม่แก้ไข">ยังไม่แก้ไข</option>
+                        <option value="แก้ไขแล้ว">แก้ไขแล้ว (บำรุงรักษาเสร็จสิ้น)</option>
+                    </select>
+                </div>
+
+                <div class="border-t border-gray-100 pt-3">
+                    <label class="block text-xs font-semibold text-red-600 mb-1"><i class="fa-solid fa-lock"></i> กรอกรหัสยืนยันเพื่อบันทึกข้อมูล:</label>
+                    <input type="password" id="saveLogPinInput" placeholder="กรอกรหัสยืนยัน" maxlength="5" class="w-full p-3 bg-red-50/50 border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 text-sm font-bold tracking-widest text-center text-red-700">
+                </div>
+
+                <div class="pt-2 border-t border-gray-100 flex gap-3">
+                    <button onclick="closeWorkLogModal()" class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition text-sm">ยกเลิก</button>
+                    <button onclick="saveWorkLog()" class="flex-1 py-2.5 bg-pea-purple hover:bg-pea-darkPurple text-white font-medium rounded-xl transition text-sm shadow-md">ยืนยันบันทึกข้อมูล</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal เลื่อนแผน (ฝนตก) -->
+    <div id="rescheduleModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100 animate-fade-in">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-pea-purple flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-rain text-amber-500"></i> เลื่อนแผน (ฝนตก / ต่อท้ายวันสุดท้าย)
+                </h3>
+                <button onclick="closeRescheduleModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">หม้อแปลงที่เลือก:</label>
+                    <p id="modalRescheduleInfo" class="text-sm font-bold text-pea-purple bg-gray-50 p-2.5 rounded-xl border border-gray-200">-</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">ย้ายไปต่อท้ายวันสุดท้าย:</label>
+                    <p id="targetLastDateText" class="text-sm font-bold text-amber-600 bg-amber-50 p-2.5 rounded-xl border border-amber-200">-</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-red-600 mb-1"><i class="fa-solid fa-lock"></i> กรอกรหัสยืนยันเพื่อเลื่อนแผน:</label>
+                    <input type="password" id="securityPinInput" placeholder="กรอกรหัสยืนยัน" maxlength="5" class="w-full p-3 bg-red-50/50 border border-red-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 text-sm font-bold tracking-widest text-center text-red-700">
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button onclick="closeRescheduleModal()" class="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition text-sm">ยกเลิก</button>
+                    <button onclick="confirmReschedule()" class="flex-1 py-2.5 bg-pea-purple hover:bg-pea-darkPurple text-white font-medium rounded-xl transition text-sm shadow-md">ยืนยันเลื่อนแผน</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-200 mt-12 py-6 text-center text-xs text-gray-500">
+        <p>การไฟฟ้าส่วนภูมิภาคจังหวัดขอนแก่น | ระบบสารสนเทศเพื่อการบริการและบำรุงรักษา</p>
+        <p class="mt-1">ข้อมูลเชื่อมต่อแบบเรียลไทม์จาก Google Sheets ผ่าน Apps Script (บันทึกถาวร)</p>
+    </footer>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbws4xZ4gXoUDuS8Wpohrc9aq8Y7JHBxApK_H8wOq3vzKN7Xd3sm8Qj0TiWl_dXRF0zemg/exec";
+
+        let outageData = [];
+        let selectedDate = "";
+        let currentYear = 2026;
+        let currentMonth = 9; // ตุลาคม
+        let map;
+        let markersLayer;
+        let activeEditId = null;
+        let activeRescheduleId = null;
+        let targetLastDate = "";
+
+        function getVillageAndLocalInfo(locationStr) {
+            if (!locationStr) return { village: "ชุมชน/พื้นที่บริการ", local: "เทศบาล/อบต.", tambon: "ขอนแก่น" };
+            let text = String(locationStr).trim();
+            let lower = text.toLowerCase();
+            let villageName = text;
+            let localName = "เทศบาล/อบต. ท้องถิ่น";
+            let tambonName = "ขอนแก่น";
+
+            if (lower.includes("โคกแปะ") || lower.includes("หนองไหล")) {
+                villageName = lower.includes("โคกแปะ") ? "บ้านโคกแปะ" : "บ้านหนองไหล";
+                localName = "ทต.โคกสี";
+                tambonName = "ต.โคกสี อ.เมือง";
+            } else if (lower.includes("เลิง") || lower.includes("หนองบัว")) {
+                villageName = lower.includes("เลิง") ? "บ้านเลิง" : "บ้านหนองบัวน้อย";
+                localName = "ทต.หนองตูม";
+                tambonName = "ต.หนองตูม อ.เมือง";
+            } else if (lower.includes("บึง") || lower.includes("ใคร่นุ่น") || lower.includes("ท่าหิน")) {
+                villageName = "บ้านบึงเนียม/ใคร่นุ่น";
+                localName = "ทต.บึงเนียม";
+                tambonName = "ต.บึงเนียม อ.เมือง";
+            } else if (lower.includes("หนองหัววัว") || lower.includes("ดอนธาตุ")) {
+                villageName = "บ้านหนองหัววัว/ดอนธาตุ";
+                localName = "ทต.โคกสี";
+                tambonName = "ต.โคกสี อ.เมือง";
+            }
+            return { village: villageName, local: localName, tambon: tambonName };
+        }
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            initMap();
+            await loadDataFromGoogleSheet();
+
+            document.getElementById("searchInput").addEventListener("input", (e) => {
+                filterAndRender(e.target.value);
+            });
+        });
+
+        function initMap() {
+            map = L.map('map').setView([16.44, 102.83], 13);
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012',
+                maxZoom: 19
+            }).addTo(map);
+
+            markersLayer = L.layerGroup().addTo(map);
+        }
+
+        function parseAndNormalizeDate(dateStr) {
+            if (!dateStr) return "";
+            let cleanStr = String(dateStr).trim();
+            let parts = cleanStr.split(/[-/]/);
+            if (parts.length === 3) {
+                let y = parseInt(parts[0], 10);
+                let m = parseInt(parts[1], 10);
+                let d = parseInt(parts[2], 10);
+                if (y > 2400) y -= 543;
+                if (parts[2].length === 4) {
+                    y = parseInt(parts[2], 10);
+                    m = parseInt(parts[1], 10);
+                    d = parseInt(parts[0], 10);
+                    if (y > 2400) y -= 543;
+                }
+                return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            }
+            return cleanStr;
+        }
+
+        async function loadDataFromGoogleSheet() {
+            try {
+                const response = await fetch(GOOGLE_SCRIPT_URL);
+                let rawData = await response.json();
+
+                if (!rawData || rawData.length === 0) throw new Error("ไม่พบข้อมูล");
+
+                outageData = rawData.map((item, index) => ({
+                    id: item.id || (index + 1),
+                    pea: item.pea || "-",
+                    size: item.size || 0,
+                    location: item.location || "-",
+                    lat: item.lat || 16.44,
+                    lng: item.lng || 102.83,
+                    date: parseAndNormalizeDate(item.date),
+                    time: item.time || "08.00-12.00",
+                    workOrder: item.workOrder || "",
+                    transformerType: item.transformerType || "CONV",
+                    itemsList: item.itemsList ? (typeof item.itemsList === 'string' ? JSON.parse(item.itemsList) : item.itemsList) : [{ materialCode: "", defect: item.defect || "", material: item.materialComment || "", qty: 1 }],
+                    status: item.status || "ยังไม่แก้ไข"
+                }));
+
+                if (outageData.length > 0 && outageData[0].date) {
+                    const firstDate = new Date(outageData[0].date);
+                    if (!isNaN(firstDate)) {
+                        currentYear = firstDate.getFullYear();
+                        currentMonth = firstDate.getMonth();
+                    }
+                    selectedDate = outageData[0].date;
+                }
+
+                updateDashboardStats();
+                renderCalendar();
+                filterAndRender();
+                document.getElementById("currentStatusDisplay").innerText = "ซิงค์ข้อมูลสำเร็จ (" + outageData.length + " จุด)";
+            } catch (error) {
+                console.error("Error loading data:", error);
+                document.getElementById("outageTableBody").innerHTML = `<tr><td colspan="6" class="text-center py-8 text-red-500">ไม่สามารถโหลดข้อมูลจาก Google Sheet ได้</td></tr>`;
+                document.getElementById("currentStatusDisplay").innerText = "เกิดข้อผิดพลาด";
+            }
+        }
+
+        async function syncDataToGoogleSheet(payload) {
+            try {
+                document.getElementById("currentStatusDisplay").innerText = "กำลังบันทึกลง Google Sheet...";
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: "POST",
+                    body: JSON.stringify({
+                        ...payload,
+                        itemsList: JSON.stringify(payload.itemsList)
+                    })
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    document.getElementById("currentStatusDisplay").innerText = "บันทึกข้อมูลสำเร็จ (ถาวร)";
+                } else {
+                    document.getElementById("currentStatusDisplay").innerText = "เกิดข้อผิดพลาดในการบันทึก";
+                }
+            } catch (e) {
+                console.error("Sync error:", e);
+                document.getElementById("currentStatusDisplay").innerText = "บันทึกออฟไลน์ (เชื่อมต่อเซิร์ฟเวอร์ไม่ได้)";
+            }
+        }
+
+        function updateDashboardStats() {
+            const total = outageData.length;
+            const completed = outageData.filter(i => i.status === "แก้ไขแล้ว").length;
+            const pending = total - completed;
+
+            document.getElementById("dashTotal").innerText = total;
+            document.getElementById("dashCompleted").innerText = completed;
+            document.getElementById("dashPending").innerText = pending;
+            document.getElementById("statTotal").innerText = total;
+
+            const uniqueDates = [...new Set(outageData.map(item => item.date))];
+            document.getElementById("statDays").innerText = uniqueDates.length;
+
+            // คำนวณสรุปยอดเบิกพัสดุ แยกรายหม้อแปลง
+            let totalMaterialQty = 0;
+            const matBody = document.getElementById("materialDashboardBody");
+            matBody.innerHTML = "";
+            let hasMaterials = false;
+
+            outageData.forEach(item => {
+                if (item.itemsList && Array.isArray(item.itemsList) && item.itemsList.length > 0) {
+                    item.itemsList.forEach(i => {
+                        let code = i.materialCode || "ไม่ระบุรหัส";
+                        let name = i.material || i.defect || "วัสดุ/อุปกรณ์ทั่วไป";
+                        let qty = parseInt(i.qty) || 1;
+                        totalMaterialQty += qty;
+                        hasMaterials = true;
+
+                        let tr = document.createElement("tr");
+                        tr.className = "hover:bg-gray-50 border-b border-gray-50";
+                        tr.innerHTML = `
+                            <td class="p-2.5 font-semibold text-pea-purple">
+                                <div>${item.pea}</div>
+                                <div class="text-[10px] text-gray-500 font-normal">ใบสั่ง: ${item.workOrder || '-'}</div>
+                            </td>
+                            <td class="p-2.5 font-mono font-bold text-gray-700">${code}</td>
+                            <td class="p-2.5 text-gray-700">${name}</td>
+                            <td class="p-2.5 text-right font-bold text-emerald-600">${qty} ชิ้น</td>
+                        `;
+                        matBody.appendChild(tr);
+                    });
+                }
+            });
+
+            document.getElementById("dashMaterialTotal").innerText = totalMaterialQty + " ชิ้น";
+
+            if (!hasMaterials) {
+                matBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-400">ยังไม่มีการบันทึกเบิกพัสดุ</td></tr>`;
+            }
+        }
+
+        function changeMonth(direction) {
+            currentMonth += direction;
+            if (currentMonth > 11) {
+                currentMonth = 0;
+                currentYear++;
+            } else if (currentMonth < 0) {
+                currentMonth = 11;
+                currentYear--;
+            }
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById("calendarGrid");
+            grid.innerHTML = "";
+
+            const thaiMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+            document.getElementById("calendarMonthTitle").innerText = `${thaiMonths[currentMonth]} พ.ศ. ${currentYear + 543}`;
+
+            const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
+            const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
+            let monthlyCount = 0;
+
+            for (let i = 0; i < firstDayIndex; i++) {
+                const emptyCell = document.createElement("div");
+                emptyCell.className = "h-20 bg-gray-50/50 rounded-xl border border-transparent";
+                grid.appendChild(emptyCell);
+            }
+
+            for (let day = 1; day <= totalDays; day++) {
+                const mm = String(currentMonth + 1).padStart(2, '0');
+                const dd = String(day).padStart(2, '0');
+                const dateStr = `${currentYear}-${mm}-${dd}`;
+
+                const dayEvents = outageData.filter(item => item.date === dateStr);
+                monthlyCount += dayEvents.length;
+
+                const cell = document.createElement("div");
+                const isSelected = (dateStr === selectedDate);
+                const dayCompleted = dayEvents.filter(i => i.status === "แก้ไขแล้ว").length;
+
+                cell.className = `h-20 p-1.5 rounded-xl border flex flex-col justify-between transition cursor-pointer overflow-hidden ${
+                    isSelected 
+                    ? 'bg-pea-purple/15 border-pea-purple shadow-sm ring-2 ring-pea-purple' 
+                    : dayEvents.length > 0 
+                        ? 'bg-white border-amber-200 hover:border-pea-purple hover:shadow' 
+                        : 'bg-gray-50/60 border-gray-100 text-gray-400'
+                }`;
+
+                let eventsHtml = '';
+                if (dayEvents.length > 0) {
+                    eventsHtml = `<div class="mt-auto flex justify-between items-center text-[10px] font-semibold"><span class="bg-pea-gold text-white px-1.5 py-0.5 rounded">${dayEvents.length} จุด</span><span class="text-emerald-600">${dayCompleted}/${dayEvents.length} เสร็จ</span></div>`;
+                }
+
+                cell.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold ${isSelected ? 'text-pea-purple' : 'text-gray-700'}">${day}</span>
+                    </div>
+                    ${eventsHtml}
+                `;
+
+                cell.onclick = () => {
+                    selectedDate = dateStr;
+                    renderCalendar();
+                    filterAndRender();
+                };
+
+                grid.appendChild(cell);
+            }
+
+            document.getElementById("monthlyEventsBadge").innerText = `รวมเดือนนี้ ${monthlyCount} รายการ`;
+            updateDashboardStats();
+        }
+
+        function filterAndRender(searchTerm = "") {
+            const tbody = document.getElementById("outageTableBody");
+            tbody.innerHTML = "";
+            markersLayer.clearLayers();
+
+            let filtered = outageData.filter(item => item.date === selectedDate);
+
+            if (searchTerm.trim() !== "") {
+                const term = searchTerm.toLowerCase();
+                filtered = outageData.filter(item => {
+                    const info = getVillageAndLocalInfo(item.location);
+                    const itemsStr = item.itemsList ? item.itemsList.map(i => `${i.materialCode} ${i.defect} ${i.material}`).join(' ') : '';
+                    return item.pea.toLowerCase().includes(term) || 
+                           item.location.toLowerCase().includes(term) ||
+                           info.village.toLowerCase().includes(term) ||
+                           info.local.toLowerCase().includes(term) ||
+                           item.status.toLowerCase().includes(term) ||
+                           itemsStr.toLowerCase().includes(term) ||
+                           (item.workOrder && item.workOrder.toLowerCase().includes(term)) ||
+                           item.date.includes(term);
+                });
+            }
+
+            const dateObj = new Date(selectedDate);
+            const formattedDateStr = !isNaN(dateObj) ? dateObj.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : selectedDate;
+            document.getElementById("selectedDateTitle").querySelector("span").innerText = formattedDateStr;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400">ไม่พบข้อมูลแผนการดับไฟในวันที่หรือเงื่อนไขนี้</td></tr>`;
+                return;
+            }
+
+            let bounds = [];
+
+            filtered.forEach(item => {
+                const info = getVillageAndLocalInfo(item.location);
+                const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`;
+                const isDone = item.status === "แก้ไขแล้ว";
+
+                let itemsHtml = '-';
+                if (item.itemsList && item.itemsList.length > 0) {
+                    itemsHtml = item.itemsList.map((i, idx) => `<div class="text-[11px] text-gray-700">${idx+1}. รหัส: <b class="text-pea-purple">${i.materialCode || '-'}</b> | ชำรุด: <b class="text-red-600">${i.defect || '-'}</b> | วัสดุใช้: <b class="text-emerald-700">${i.material || '-'}</b> (จำนวน: <b>${i.qty || 1}</b>)</div>`).join('');
+                }
+
+                const tr = document.createElement("tr");
+                tr.className = "hover:bg-gray-50 transition border-b border-gray-50";
+                tr.innerHTML = `
+                    <td class="p-3 align-top">
+                        <div class="font-medium text-pea-purple text-xs"><i class="fa-regular fa-clock mr-1"></i>${item.time}</div>
+                        <span class="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-semibold ${isDone ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                            ${item.status}
+                        </span>
+                    </td>
+                    <td class="p-3 align-top font-semibold text-gray-800">${item.pea}</td>
+                    <td class="p-3 align-top">
+                        <div class="text-xs font-semibold text-gray-700 mb-1">ใบสั่ง: <span class="text-pea-purple">${item.workOrder || '-'}</span> | ชนิด: <span class="text-amber-600">${item.transformerType}</span></div>
+                        <div class="bg-gray-50 p-2 rounded-lg border border-gray-100 space-y-0.5">${itemsHtml}</div>
+                    </td>
+                    <td class="p-3 align-top">
+                        <div class="font-bold text-pea-purple text-xs"><i class="fa-solid fa-house-chimney text-pea-gold mr-1"></i>${info.village}</div>
+                        <div class="text-gray-600 text-[11px]">${info.local} (${info.tambon})</div>
+                    </td>
+                    <td class="p-3 align-top text-center">
+                        <a href="${mapsUrl}" target="_blank" 
+                            class="inline-flex items-center gap-1.5 bg-pea-purple hover:bg-pea-darkPurple text-white px-3 py-1.5 rounded-lg transition text-xs shadow-sm font-medium">
+                            <i class="fa-solid fa-diamond-turn-right"></i> นำทาง
+                        </a>
+                    </td>
+                    <td class="p-3 align-top text-center space-y-1">
+                        <button onclick="openWorkLogModal(${item.id})" 
+                            class="inline-flex items-center gap-1 bg-pea-gold hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg transition text-xs shadow-sm font-medium">
+                            <i class="fa-solid fa-pen"></i> บันทึกข้อมูล
+                        </button>
+                        <br>
+                        <button onclick="openRescheduleModal(${item.id})" 
+                            class="inline-flex items-center gap-1 bg-gray-500 hover:bg-gray-600 text-white px-2.5 py-1 rounded-lg transition text-xs shadow-sm font-medium">
+                            <i class="fa-solid fa-cloud-rain"></i> เลื่อนแผน
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                if(item.lat && item.lng) {
+                    const marker = L.marker([item.lat, item.lng]);
+                    marker.bindPopup(`
+                        <div style="font-family: 'Kanit', sans-serif; min-width: 220px;">
+                            <b style="color: #4C1D95; font-size: 14px;">หม้อแปลง: ${item.pea}</b><br>
+                            <b>สถานะ:</b> <span style="color: ${isDone ? 'green' : 'orange'}; font-weight: bold;">${item.status}</span><br>
+                            <b>ใบสั่งงาน:</b> ${item.workOrder || '-'}<br>
+                            <b>ชนิด:</b> ${item.transformerType}<br>
+                            <b>หมู่บ้าน:</b> ${info.village} (${info.local})<br><br>
+                            <a href="${mapsUrl}" target="_blank" style="display: block; text-align: center; background:#4C1D95; color:white; padding:6px; border-radius:6px; text-decoration:none; font-size:12px; font-weight: bold;">เปิด Google Maps นำทาง</a>
+                        </div>
+                    `);
+                    markersLayer.addLayer(marker);
+                    bounds.push([item.lat, item.lng]);
+                }
+            });
+
+            if (bounds.length > 0) {
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+            }
+        }
+
+        function openWorkLogModal(id) {
+            activeEditId = id;
+            const item = outageData.find(i => i.id === id);
+            if (!item) return;
+
+            document.getElementById("modalItemInfo").innerText = `${item.pea} - ${item.location}`;
+            document.getElementById("inputWorkOrder").value = item.workOrder || "";
+            document.getElementById("inputTransformerType").value = item.transformerType || "CONV";
+            document.getElementById("inputStatus").value = item.status || "ยังไม่แก้ไข";
+            document.getElementById("saveLogPinInput").value = "";
+
+            const container = document.getElementById("materialRowsContainer");
+            container.innerHTML = "";
+
+            if (item.itemsList && item.itemsList.length > 0) {
+                item.itemsList.forEach(i => addMaterialRow(i.materialCode || "", i.defect || "", i.material || "", i.qty || 1));
+            } else {
+                addMaterialRow("", "", "", 1);
+            }
+
+            document.getElementById("workLogModal").classList.remove("hidden");
+        }
+
+        function formatMaterialCode(input) {
+            let value = input.value.replace(/[^0-9]/g, '');
+            let formatted = '';
+            if (value.length > 0) formatted += value.substring(0, 1);
+            if (value.length > 1) formatted += '-' + value.substring(1, 3);
+            if (value.length > 3) formatted += '-' + value.substring(3, 6);
+            if (value.length > 6) formatted += '-' + value.substring(6, 10);
+            input.value = formatted;
+        }
+
+        function addMaterialRow(materialCode = "", defect = "", material = "", qty = 1) {
+            const container = document.getElementById("materialRowsContainer");
+            const rowId = 'mat_row_' + Date.now() + Math.random().toString(36).substr(2, 5);
+
+            const div = document.createElement("div");
+            div.className = "bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2";
+            div.id = rowId;
+            div.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <div class="flex-1">
+                        <label class="block text-[10px] text-gray-500 font-semibold mb-0.5">รหัสวัสดุ (0-00-000-0000)</label>
+                        <input type="text" placeholder="เช่น 3-12-345-6789" value="${materialCode}" maxlength="13" oninput="formatMaterialCode(this)" class="row-code w-full p-2 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold text-pea-purple">
+                    </div>
+                    <div class="w-20">
+                        <label class="block text-[10px] text-gray-500 font-semibold mb-0.5">จำนวนเบิก</label>
+                        <input type="number" min="1" value="${qty}" class="row-qty w-full p-2 bg-white border border-gray-200 rounded-lg text-xs text-center font-bold">
+                    </div>
+                    <button type="button" onclick="document.getElementById('${rowId}').remove()" class="text-red-500 hover:text-red-700 p-2 mt-4">
+                        <i class="fa-solid fa-trash-can text-sm"></i>
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" placeholder="อุปกรณ์ที่ชำรุด" value="${defect}" class="row-defect w-full p-2 bg-white border border-gray-200 rounded-lg text-xs">
+                    <input type="text" placeholder="วัสดุที่ใช้แก้ไข / Comment" value="${material}" class="row-material w-full p-2 bg-white border border-gray-200 rounded-lg text-xs">
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        function closeWorkLogModal() {
+            document.getElementById("workLogModal").classList.add("hidden");
+            activeEditId = null;
+        }
+
+        function saveWorkLog() {
+            const enteredPin = document.getElementById("saveLogPinInput").value.trim();
+            if (enteredPin !== "14045") {
+                alert("รหัสยืนยันไม่ถูกต้อง! กรุณากรอกรหัสยืนยันให้ถูกต้องเพื่อบันทึกข้อมูล");
+                document.getElementById("saveLogPinInput").focus();
+                return;
+            }
+
+            const index = outageData.findIndex(i => i.id === activeEditId);
+            if (index !== -1) {
+                const rows = document.querySelectorAll("#materialRowsContainer > div");
+                let itemsList = [];
+                rows.forEach(r => {
+                    const materialCode = r.querySelector(".row-code").value.trim();
+                    const defect = r.querySelector(".row-defect").value.trim();
+                    const material = r.querySelector(".row-material").value.trim();
+                    const qty = parseInt(r.querySelector(".row-qty").value) || 1;
+                    if (materialCode || defect || material) {
+                        itemsList.push({ materialCode, defect, material, qty });
+                    }
+                });
+
+                outageData[index].workOrder = document.getElementById("inputWorkOrder").value.trim();
+                outageData[index].transformerType = document.getElementById("inputTransformerType").value;
+                outageData[index].itemsList = itemsList;
+                outageData[index].status = document.getElementById("inputStatus").value;
+
+                syncDataToGoogleSheet(outageData[index]);
+
+                alert("บันทึกข้อมูลผลการปฏิบัติงานลง Google Sheets เรียบร้อยแล้ว");
+                closeWorkLogModal();
+                renderCalendar();
+                filterAndRender();
+            }
+        }
+
+        function openRescheduleModal(id) {
+            activeRescheduleId = id;
+            const item = outageData.find(i => i.id === id);
+            document.getElementById("modalRescheduleInfo").innerText = `${item.pea} - ${item.location}`;
+            document.getElementById("securityPinInput").value = "";
+
+            const allDates = [...new Set(outageData.map(i => i.date))].sort();
+            if (allDates.length > 0) {
+                targetLastDate = allDates[allDates.length - 1];
+                const dObj = new Date(targetLastDate);
+                const formattedLastDate = !isNaN(dObj) ? dObj.toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' }) : targetLastDate;
+                document.getElementById("targetLastDateText").innerText = `ย้ายไปต่อท้ายวันสุดท้าย (${formattedLastDate})`;
+            } else {
+                targetLastDate = selectedDate;
+                document.getElementById("targetLastDateText").innerText = targetLastDate;
+            }
+
+            document.getElementById("rescheduleModal").classList.remove("hidden");
+        }
+
+        function closeRescheduleModal() {
+            document.getElementById("rescheduleModal").classList.add("hidden");
+            activeRescheduleId = null;
+        }
+
+        function confirmReschedule() {
+            const enteredPin = document.getElementById("securityPinInput").value.trim();
+            if (enteredPin !== "14045") {
+                alert("รหัสยืนยันไม่ถูกต้อง! กรุณากรอกรหัสยืนยันให้ถูกต้อง");
+                document.getElementById("securityPinInput").focus();
+                return;
+            }
+
+            const index = outageData.findIndex(i => i.id === activeRescheduleId);
+            if (index !== -1) {
+                outageData[index].date = targetLastDate;
+                outageData[index].time = "13.00-16.00 (เลื่อนแผน)";
+
+                syncDataToGoogleSheet(outageData[index]);
+
+                alert(`เลื่อนแผนของหม้อแปลง ${outageData[index].pea} ไปต่อท้ายวันที่ ${targetLastDate} เรียบร้อยแล้ว`);
+                closeRescheduleModal();
+
+                selectedDate = targetLastDate;
+                renderCalendar();
+                filterAndRender();
+            }
+        }
+    </script>
+</body>
+</html>
