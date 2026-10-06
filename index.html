@@ -184,26 +184,49 @@
             </div>
 
             <!-- Warehouse Inventory & Restock History Dashboard -->
-            <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100 space-y-4">
-                <div class="flex justify-between items-center">
-                    <h3 class="text-md font-semibold text-pea-purple flex items-center gap-2">
-                        <i class="fa-solid fa-warehouse text-pea-gold"></i> คลังพัสดุหม้อแปลงสำรอง (ยอดคงเหลือ & ประวัติการเติม)
+            <div class="bg-white rounded-2xl shadow-md p-5 border border-gray-100 space-y-6">
+                <!-- ตารางยอดคงเหลือในคลัง -->
+                <div>
+                    <h3 class="text-md font-semibold text-pea-purple mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-warehouse text-pea-gold"></i> คลังพัสดุหม้อแปลงสำรอง (ยอดคงเหลือปัจจุบัน)
                     </h3>
+                    <div class="overflow-x-auto max-h-60 overflow-y-auto pr-1">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 uppercase tracking-wider sticky top-0">
+                                    <th class="p-2.5 rounded-l-lg">รายการพัสดุสำรอง</th>
+                                    <th class="p-2.5 text-center">รับเข้ารวม</th>
+                                    <th class="p-2.5 text-center">เบิกจ่ายแล้ว</th>
+                                    <th class="p-2.5 text-right rounded-r-lg font-bold">คงเหลือในคลัง</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventoryTableBody" class="divide-y divide-gray-100">
+                                <tr><td colspan="4" class="text-center py-4 text-gray-400">กำลังโหลดข้อมูลคลัง...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="overflow-x-auto max-h-60 overflow-y-auto pr-1">
-                    <table class="w-full text-left border-collapse text-xs">
-                        <thead>
-                            <tr class="bg-gray-100 text-gray-700 uppercase tracking-wider sticky top-0">
-                                <th class="p-2.5 rounded-l-lg">รายการพัสดุสำรอง</th>
-                                <th class="p-2.5 text-center">รับเข้ารวม</th>
-                                <th class="p-2.5 text-center">เบิกจ่ายแล้ว</th>
-                                <th class="p-2.5 text-right rounded-r-lg font-bold">คงเหลือในคลัง</th>
-                            </tr>
-                        </thead>
-                        <tbody id="inventoryTableBody" class="divide-y divide-gray-100">
-                            <tr><td colspan="4" class="text-center py-4 text-gray-400">กำลังโหลดข้อมูลคลัง...</td></tr>
-                        </tbody>
-                    </table>
+
+                <!-- ตารางประวัติการเติมของเข้าคลัง (บันทึกถาวร) -->
+                <div class="border-t border-gray-100 pt-4">
+                    <h3 class="text-md font-semibold text-pea-purple mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-pea-gold"></i> ประวัติการเติมของเข้าคลัง (บันทึกถาวร)
+                    </h3>
+                    <div class="overflow-x-auto max-h-52 overflow-y-auto pr-1">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-gray-100 text-gray-700 uppercase tracking-wider sticky top-0">
+                                    <th class="p-2.5 rounded-l-lg">วันที่/เวลา รับเข้า</th>
+                                    <th class="p-2.5">รอบที่เติม / หมายเหตุ</th>
+                                    <th class="p-2.5">รายการพัสดุที่รับเข้า</th>
+                                    <th class="p-2.5 text-right rounded-r-lg">จำนวนรวม</th>
+                                </tr>
+                            </thead>
+                            <tbody id="restockHistoryTableBody" class="divide-y divide-gray-100">
+                                <tr><td colspan="4" class="text-center py-4 text-gray-400">ยังไม่มีประวัติการรับเข้า</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
@@ -437,10 +460,10 @@
         const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbws4xZ4gXoUDuS8Wpohrc9aq8Y7JHBxApK_H8wOq3vzKN7Xd3sm8Qj0TiWl_dXRF0zemg/exec";
 
         let outageData = [];
-        let restockBatches = JSON.parse(localStorage.getItem("pea_restock_batches")) || [];
+        let restockBatches = [];
         let selectedDate = "";
         let currentYear = 2026;
-        let currentMonth = 9; // ตุลาคม
+        let currentMonth = 9; // ตุลาคม (0-indexed: 9 = ตุลาคม)
         let map;
         let markersLayer;
         let activeEditId = null;
@@ -527,18 +550,17 @@
         function parseAndNormalizeDate(dateStr) {
             if (!dateStr) return "";
             let cleanStr = String(dateStr).trim();
+            
+            // รองรับรูปแบบ ค.ศ. (เช่น 2026-10-06 หรือ 26-10-06)
             let parts = cleanStr.split(/[-/]/);
             if (parts.length === 3) {
                 let y = parseInt(parts[0], 10);
                 let m = parseInt(parts[1], 10);
                 let d = parseInt(parts[2], 10);
-                if (y > 2400) y -= 543;
-                if (parts[2].length === 4) {
-                    y = parseInt(parts[2], 10);
-                    m = parseInt(parts[1], 10);
-                    d = parseInt(parts[0], 10);
-                    if (y > 2400) y -= 543;
-                }
+                
+                // หากบันทึกปีเป็น 2 หลัก (เช่น 26) ให้แปลงเป็น 2026
+                if (y < 100) y += 2000;
+                
                 return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
             }
             return cleanStr;
@@ -547,7 +569,15 @@
         async function loadDataFromGoogleSheet() {
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL);
-                let rawData = await response.json();
+                let resJson = await response.json();
+
+                let rawData = [];
+                if (Array.isArray(resJson)) {
+                    rawData = resJson;
+                } else if (resJson && resJson.outages) {
+                    rawData = resJson.outages;
+                    restockBatches = resJson.restockBatches || [];
+                }
 
                 if (!rawData || rawData.length === 0) throw new Error("ไม่พบข้อมูล");
 
@@ -568,10 +598,10 @@
                 }));
 
                 if (outageData.length > 0 && outageData[0].date) {
-                    const firstDate = new Date(outageData[0].date);
-                    if (!isNaN(firstDate)) {
-                        currentYear = firstDate.getFullYear();
-                        currentMonth = firstDate.getMonth();
+                    let firstDateParts = outageData[0].date.split("-");
+                    if (firstDateParts.length === 3) {
+                        currentYear = parseInt(firstDateParts[0], 10);
+                        currentMonth = parseInt(firstDateParts[1], 10) - 1; // 0-indexed
                     }
                     selectedDate = outageData[0].date;
                 }
@@ -607,6 +637,28 @@
             } catch (e) {
                 console.error("Sync error:", e);
                 document.getElementById("currentStatusDisplay").innerText = "บันทึกออฟไลน์ (เชื่อมต่อเซิร์ฟเวอร์ไม่ได้)";
+            }
+        }
+
+        async function syncRestockBatchToGoogleSheet(newBatch) {
+            try {
+                document.getElementById("currentStatusDisplay").innerText = "กำลังบันทึกประวัติเติมคลังลง Google Sheet...";
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: "POST",
+                    body: JSON.stringify({
+                        action: "saveRestock",
+                        restockBatch: JSON.stringify(newBatch)
+                    })
+                });
+                const result = await response.json();
+                if (result.status === "success") {
+                    document.getElementById("currentStatusDisplay").innerText = "บันทึกประวัติเติมคลังสำเร็จ (ถาวร)";
+                } else {
+                    document.getElementById("currentStatusDisplay").innerText = "บันทึกประวัติออฟไลน์";
+                }
+            } catch (e) {
+                console.error("Restock sync error:", e);
+                document.getElementById("currentStatusDisplay").innerText = "บันทึกประวัติออฟไลน์ (เชื่อมต่อเซิร์ฟเวอร์ไม่ได้)";
             }
         }
 
@@ -662,6 +714,7 @@
             }
 
             renderWarehouseInventory(disbursedMap);
+            renderRestockHistory();
         }
 
         function renderWarehouseInventory(disbursedMap) {
@@ -691,6 +744,35 @@
                     <td class="p-2.5 text-right font-bold ${balance < 0 ? 'text-red-600' : 'text-emerald-600'}">${balance}</td>
                 `;
                 invBody.appendChild(tr);
+            });
+        }
+
+        function renderRestockHistory() {
+            let historyBody = document.getElementById("restockHistoryTableBody");
+            historyBody.innerHTML = "";
+
+            if (!restockBatches || restockBatches.length === 0) {
+                historyBody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-400">ยังไม่มีประวัติการรับเข้า</td></tr>`;
+                return;
+            }
+
+            let sortedBatches = [...restockBatches].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            sortedBatches.forEach(batch => {
+                let dateObj = new Date(batch.date);
+                let dateStr = !isNaN(dateObj) ? dateObj.toLocaleString('th-TH') : batch.date;
+                let itemsSummary = batch.items.map(it => `${it.name} (${it.qty})`).join(', ');
+                let totalBatchQty = batch.items.reduce((sum, it) => sum + (parseInt(it.qty) || 0), 0);
+
+                let tr = document.createElement("tr");
+                tr.className = "hover:bg-gray-50 border-b border-gray-50";
+                tr.innerHTML = `
+                    <td class="p-2.5 font-semibold text-gray-600">${dateStr}</td>
+                    <td class="p-2.5 font-bold text-pea-purple">${batch.batchName}</td>
+                    <td class="p-2.5 text-gray-700">${itemsSummary}</td>
+                    <td class="p-2.5 text-right font-bold text-blue-600">${totalBatchQty} ชิ้น</td>
+                `;
+                historyBody.appendChild(tr);
             });
         }
 
@@ -751,9 +833,9 @@
             };
 
             restockBatches.push(newBatch);
-            localStorage.setItem("pea_restock_batches", JSON.stringify(restockBatches));
+            syncRestockBatchToGoogleSheet(newBatch);
 
-            alert("บันทึกเติมของเข้าคลังเรียบร้อยแล้ว");
+            alert("บันทึกเติมของเข้าคลังและบันทึกประวัติถาวรเรียบร้อยแล้ว");
             closeRestockModal();
             updateDashboardStats();
         }
@@ -775,7 +857,10 @@
             grid.innerHTML = "";
 
             const thaiMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-            document.getElementById("calendarMonthTitle").innerText = `${thaiMonths[currentMonth]} พ.ศ. ${currentYear + 543}`;
+            
+            // แปลง ค.ศ. ให้เป็น พ.ศ. แบบถูกต้อง (เช่น 2026 + 543 = 2569)
+            let displayYear = currentYear < 2400 ? currentYear + 543 : currentYear;
+            document.getElementById("calendarMonthTitle").innerText = `${thaiMonths[currentMonth]} พ.ศ. ${displayYear}`;
 
             const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
             const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
